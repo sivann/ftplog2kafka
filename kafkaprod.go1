@@ -1,11 +1,11 @@
-package main
+package mainx
 
 import (
 	"fmt"
-	"github.com/confluentinc/confluent-kafka-go/kafka"
-	"github.com/hpcloud/tail"
 	"os"
 	"time"
+
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 func main() {
@@ -28,24 +28,23 @@ func main() {
 
 	fmt.Printf("Created Producer %v\n", p)
 
-
 	go func() {
 		return
 		fmt.Printf("start goroutine\n")
 		for e := range p.Events() {
 			fmt.Printf("forloop\n")
 			switch ev := e.(type) {
-				case *kafka.Message:
-					m := ev
-					if m.TopicPartition.Error != nil {
-						fmt.Printf("Delivery failed: %v\n", m.TopicPartition.Error)
-					} else {
-						fmt.Printf("Delivered message to topic %s [%d] at offset %v\n",
-							*m.TopicPartition.Topic, m.TopicPartition.Partition, m.TopicPartition.Offset)
-					}
+			case *kafka.Message:
+				m := ev
+				if m.TopicPartition.Error != nil {
+					fmt.Printf("Delivery failed: %v\n", m.TopicPartition.Error)
+				} else {
+					fmt.Printf("Delivered message to topic %s [%d] at offset %v\n",
+						*m.TopicPartition.Topic, m.TopicPartition.Partition, m.TopicPartition.Offset)
+				}
 
-				default:
-					fmt.Printf("Ignored event: %s\n", ev)
+			default:
+				fmt.Printf("Ignored event: %s\n", ev)
 			}
 		}
 	}()
@@ -54,8 +53,8 @@ func main() {
 		value := "Hello Go!"
 		value = fmt.Sprintf("Current Unix Time: %v\n", time.Now().Unix())
 
-		fmt.Printf("Evt len: %d, cap:%d\n", len(p.Events()),cap(p.Events()))
-		fmt.Printf("Prod len: %d, cap:%d\n", len(p.ProduceChannel()),cap(p.ProduceChannel()))
+		fmt.Printf("Evt len: %d, cap:%d\n", len(p.Events()), cap(p.Events()))
+		fmt.Printf("Prod len: %d, cap:%d\n", len(p.ProduceChannel()), cap(p.ProduceChannel()))
 
 		p.ProduceChannel() <- &kafka.Message{TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny}, Value: []byte(value)}
 		time.Sleep(1 * time.Second)
