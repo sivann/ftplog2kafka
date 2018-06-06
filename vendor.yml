@@ -1,4 +1,6 @@
 vendors:
+- path: github.com/confluentinc/confluent-kafka-go
+  rev: 1112e2c08a15bce669a99cc35284a690fd2086b8
 - path: github.com/fsnotify/fsnotify
   rev: c2828203cd70a50dcccfb2761f8b1f8ceef9a8e9
 - path: github.com/hpcloud/tail
