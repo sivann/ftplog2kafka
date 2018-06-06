@@ -159,25 +159,26 @@ func sigHdl(sigc <-chan os.Signal) {
 func kafkaProdEvtMon(producer *kafka.Producer) {
 	log.Printf("kafkaProdEvtMon:Started\n")
 	for e := range producer.Events() {
-		log.Printf("kafkaProdEvtMon:forloop\n")
 		switch ev := e.(type) {
 		case *kafka.Message:
 			m := ev
-			fmt.Printf("MSG:%s\n", m.Value)
+			//fmt.Printf("MSG:%s\n", m.Value)
 			if m.TopicPartition.Error != nil {
 				log.Printf("kafkaProdEvtMon:Delivery failed: %v\n", m.TopicPartition.Error)
 			} else {
-				log.Printf("kafkaProdEvtMon:Delivered message to topic %s [%d] at offset %v\n",
-					*m.TopicPartition.Topic, m.TopicPartition.Partition,
-					m.TopicPartition.Offset)
 				km := new(KMessage)
 				err := json.Unmarshal(m.Value, &km)
+				var fn string
+				var offset int64
 				if err == nil {
-					offset := km.KPayload.FileOffset
-					fn := km.KPayload.Filename
+					offset = km.KPayload.FileOffset
+					fn = km.KPayload.Filename
 					//fmt.Printf("OFFSET:%v %s\n", km.KPayload.FileOffset, km.KPayload.Filename)
 					savePos(offset, fn)
 				}
+				log.Printf("kafkaProdEvtMon:Delivered message to topic %s [%d] at offset %v, filename: %s\n",
+					*m.TopicPartition.Topic, m.TopicPartition.Partition,
+					m.TopicPartition.Offset, fn)
 			}
 
 		default:
