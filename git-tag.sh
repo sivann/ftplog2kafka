@@ -39,7 +39,7 @@ LF='
 lastdate=`git log -1 --format=%ci`
 
 
-if [ `git status --short|wc -l` -ne 0 ] ; then
+if [ `git status --short|grep -v '^??'|wc -l` -ne 0 ] ; then
 	git status --short
 	echo "It seems there are not commited changes, aborting"
 	exit 4
