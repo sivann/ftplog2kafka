@@ -25,6 +25,9 @@ import (
 	"github.com/hpcloud/tail"
 )
 
+var kafkaFlushTimeout = 5000  //message produce timeout (ms)
+var kafkaFlushMaxPending = 10 //with that many undelivered messages, exit
+
 //KMessage format sent to kafka
 type KMessage struct {
 	Type string
@@ -199,11 +202,11 @@ func kafkaSend(producer *kafka.Producer, topic string, value []byte) {
 
 	producer.ProduceChannel() <- &kmsg
 
-	npending := producer.Flush(5000) //5sec timeout
+	npending := producer.Flush(kafkaFlushTimeout) //5sec timeout
 	if npending > 1 {
 		log.Printf("kafkaSend:ERROR: %d unflushed messages\n", npending)
 	}
-	if npending > 10 {
+	if npending > kafkaFlushMaxPending {
 		log.Printf("kafkaSend:ERROR: %d unflushed messages, exiting\n", npending)
 		os.Exit(1)
 	}
@@ -266,9 +269,9 @@ func main() {
 	var seekInfo *tail.SeekInfo
 	if stateOk {
 		log.Printf("Seeking to offset:%d\n", offset)
-		seekInfo = &tail.SeekInfo{offset, io.SeekStart}
+		seekInfo = &tail.SeekInfo{Offset: offset, Whence: io.SeekStart}
 	} else {
-		seekInfo = &tail.SeekInfo{0, io.SeekStart}
+		seekInfo = &tail.SeekInfo{Offset: 0, Whence: io.SeekStart}
 	}
 
 	//
