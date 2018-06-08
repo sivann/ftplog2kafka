@@ -1,4 +1,6 @@
 vendors:
+- path: github.com/BurntSushi/toml
+  rev: a368813c5e648fee92e5f6c30e3944ff9d5e8895
 - path: github.com/confluentinc/confluent-kafka-go
   rev: 1112e2c08a15bce669a99cc35284a690fd2086b8
 - path: github.com/fsnotify/fsnotify
@@ -6,7 +8,7 @@ vendors:
 - path: github.com/hpcloud/tail
   rev: a1dbeea552b7c8df4b542c66073e393de198a800
 - path: golang.org/x/sys
-  rev: c11f84a56e43e20a78cee75a7c034031ecf57d1f
+  rev: 9527bec2660bd847c050fda93a0f0c6dee0800bb
 - path: gopkg.in/fsnotify/fsnotify.v1
   rev: c2828203cd70a50dcccfb2761f8b1f8ceef9a8e9
 - path: gopkg.in/tomb.v1
