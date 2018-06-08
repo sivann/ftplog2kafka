@@ -143,7 +143,7 @@ func determineLogOffset(stateFile string, ftpLogFile string) *tail.SeekInfo {
 		log.Printf("ftp logfile inodes match (%d) and statefile is valid: seeking to offset:%d\n", currentInode, offset)
 		seekInfo = &tail.SeekInfo{Offset: offset, Whence: io.SeekStart}
 	} else if !stateFileOk {
-		log.Printf("WARNING: statefile seems corrupted, seeking to start of logfile")
+		log.Printf("WARNING: statefile seems corrupted, seeking to start of logfile %s",ftpLogFile)
 		seekInfo = &tail.SeekInfo{Offset: 0, Whence: io.SeekStart}
 	} else {
 		log.Printf("WARNING: logfile seems changed since we last tailed it (previous inode: %d, current inode:%d), seeking to start of logfile.", savedInode, currentInode)
@@ -155,10 +155,11 @@ func determineLogOffset(stateFile string, ftpLogFile string) *tail.SeekInfo {
 func getLines(fn string, linecount int) string {
 	var sample string
 	var maxLength = 15000
+
 	file, err := os.Open(fn)
 	defer file.Close()
 	if err != nil {
-		log.Printf("ERROR: opening file %s: %v\n", fn, err)
+		log.Printf("ERROR:getLines: opening file %s: %v\n", fn, err)
 		return ""
 	}
 
@@ -179,8 +180,8 @@ func getLines(fn string, linecount int) string {
 		sample += line
 	}
 
-	if err != io.EOF {
-		fmt.Printf("ERROR: reading file %s: %v\n", fn, err)
+	if err != nil && err != io.EOF {
+		fmt.Printf("ERROR: getLines: reading file %s: %v\n", fn, err)
 	}
 	return sample
 
@@ -190,12 +191,16 @@ func getLines(fn string, linecount int) string {
 func xferlog2KMessage(line string, offset int64, inode uint64) ([]byte, error) {
 	//Example line from ftp:
 	//2018-06-06T13:24:56|195.46.28.226|ftp-admin|/bbb/LibreOffice_6.0.4_MacOS_x86-64.dmg|91488256||STOR LibreOffice_6.0.4_MacOS_x86-64.dmg|226
+	log.Printf("Parsing: %s\n",line);
 
 	s := strings.Split(line, "|")
-	if len(s) < 8 {
-		return nil, errors.New("Not enough fields")
+	if len(s) < 9 {
+		return nil, errors.New("Not enough fields in logfile")
 	}
-	sample := getLines(s[4], 10)
+
+	fullpath := C.FtpHomePrefix+"/"+s[4]
+	sample := getLines(fullpath, 10)
+	//fmt.Printf("sample[%s]:%s\n",s[4],sample);
 
 	m := &KMessage{
 		Type: "NewFile",
@@ -236,6 +241,7 @@ func tailFile(logFile string, cfg tail.Config,
 	td <- t
 
 	if err != nil {
+		fmt.Printf("ERROR:%v\n",err);
 		log.Fatalln("TailFile failed - ", err)
 		return
 	}
@@ -422,13 +428,12 @@ func main() {
 	cfg := tail.Config{
 		Follow:   true,
 		ReOpen:   true,
+		MustExist:   true,
 		Location: seekInfo,
 	}
 	// Start the logfile monitor goroutine
 	go tailFile(C.FtpLogFile, cfg, td, producer, C.Topic)
 	t1 := <-td //wait for it to start and get the *tail so we can access file offset (t1.Tell()) from elsewhere
-
-	_ = err
 
 	for {
 		offset, err = t1.Tell()
