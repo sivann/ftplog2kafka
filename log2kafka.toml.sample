@@ -1,0 +1,4 @@
+Brokers="pkgtest.inaccess.com:9092"
+StateFile="/tmp/log2kafka.dat"
+Topic="mytopic"
+FtpHomePrefix='/disk1/ftphome'

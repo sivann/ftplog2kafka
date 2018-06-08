@@ -1,11 +1,19 @@
 /*
  * Monitors a proftpd ExtendedLog file and publishes new files to a kafka topic
- * Proftpd: LogFormat flare   "%{%Y-%m-%dT%H:%M:%S}t|%a|%u|%F|%b|%{file-size}|%r|%s"
+ * Proftpd: LogFormat flare   "%{%Y-%m-%dT%H:%M:%S}t|%a|%u|%F|%f|%b|%{file-size}|%r|%s"
  */
+
+/* log2kafka.toml example:
+   Brokers="pkgtest.inaccess.com:9092"
+   StateFile="/tmp/log2kafka.dat"
+   Topic="mytopic"
+   FtpHomePrefix='/disk1/ftphome'
+*/
 
 package main
 
 import (
+	"bufio"
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
@@ -17,17 +25,28 @@ import (
 	"log/syslog"
 	"os"
 	"os/signal"
-	"strconv"
+	"path"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/BurntSushi/toml"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/hpcloud/tail"
 )
 
-var kafkaFlushTimeout = 5000 //message produce timeout (ms), override with env KAFKA_FLUSH_TIMEOUT
-var kafkaMaxPending = 10     //with that many undelivered messages, exit. Override with env KAFKA_MAX_PENDING
+type Config struct {
+	KafkaFlushTimeout int //message produce timeout (ms), override with env KAFKA_FLUSH_TIMEOUT
+	KafkaMaxPending   int //with that many undelivered messages, exit. Override with env KAFKA_MAX_PENDING
+	FtpHomePrefix     string
+	FtpLogFile        string
+	Topic             string
+	Brokers           string
+	StateFile         string
+}
+
+//C Global config
+var C Config
 
 //KMessage format sent to kafka
 type KMessage struct {
@@ -38,13 +57,15 @@ type KMessage struct {
 //KPayload message payload: ftp file data
 type KPayload struct {
 	Timestamp       string
-	Filename        string
+	FileName        string
+	FileNameFull    string
 	BytesTransfered string
 	FileSize        string
 	RemoteIP        string
 	Username        string
 	FTPCommand      string
 	FTPResponse     string
+	Sample          string
 	FileOffset      int64
 	FileInode       uint64
 }
@@ -53,6 +74,14 @@ func check(e error) {
 	if e != nil {
 		panic(e)
 	}
+}
+func checkNil(s string, name string) int {
+	if len(s) == 0 {
+		fmt.Printf("ERROR: %s shouldn't be empty\n", name)
+		return 1
+	}
+	return 0
+
 }
 
 func hashString(s string) string {
@@ -122,7 +151,42 @@ func determineLogOffset(stateFile string, ftpLogFile string) *tail.SeekInfo {
 	return seekInfo
 }
 
-//get an xferlog line and create a kafka json message
+// reads linecount lines from file fn up to hardcoded size limit of 15K
+func getLines(fn string, linecount int) string {
+	var sample string
+	var maxLength = 15000
+	file, err := os.Open(fn)
+	defer file.Close()
+	if err != nil {
+		log.Printf("ERROR: opening file %s: %v\n", fn, err)
+		return ""
+	}
+
+	reader := bufio.NewReader(file)
+	var line string
+	var length int
+	for i := 0; i < 10; i++ {
+		line, err = reader.ReadString('\n')
+		length += len(line)
+
+		if err != nil {
+			break
+		}
+
+		if length > maxLength {
+			fmt.Printf("ERROR: reading file %s: size %d exceeds maximum total size of %d  while reading line %d\n", fn, length, maxLength, (i + 1))
+		}
+		sample += line
+	}
+
+	if err != io.EOF {
+		fmt.Printf("ERROR: reading file %s: %v\n", fn, err)
+	}
+	return sample
+
+}
+
+//get an ftp log line and create a kafka json message
 func xferlog2KMessage(line string, offset int64, inode uint64) ([]byte, error) {
 	//Example line from ftp:
 	//2018-06-06T13:24:56|195.46.28.226|ftp-admin|/bbb/LibreOffice_6.0.4_MacOS_x86-64.dmg|91488256||STOR LibreOffice_6.0.4_MacOS_x86-64.dmg|226
@@ -131,6 +195,7 @@ func xferlog2KMessage(line string, offset int64, inode uint64) ([]byte, error) {
 	if len(s) < 8 {
 		return nil, errors.New("Not enough fields")
 	}
+	sample := getLines(s[4], 10)
 
 	m := &KMessage{
 		Type: "NewFile",
@@ -138,11 +203,13 @@ func xferlog2KMessage(line string, offset int64, inode uint64) ([]byte, error) {
 			Timestamp:       s[0],
 			RemoteIP:        s[1],
 			Username:        s[2],
-			Filename:        s[3],
-			BytesTransfered: s[4],
-			FileSize:        s[5],
-			FTPCommand:      s[6],
-			FTPResponse:     s[7],
+			FileName:        s[3],
+			FileNameFull:    s[4],
+			BytesTransfered: s[5],
+			FileSize:        s[6],
+			FTPCommand:      s[7],
+			FTPResponse:     s[8],
+			Sample:          sample,
 			FileOffset:      offset,
 			FileInode:       inode,
 		},
@@ -153,7 +220,10 @@ func xferlog2KMessage(line string, offset int64, inode uint64) ([]byte, error) {
 }
 
 func getInodeOfFile(fileName string) uint64 {
-	fileinfo, _ := os.Stat(fileName)
+	fileinfo, err := os.Stat(fileName)
+	if err != nil {
+		return 0
+	}
 	stat, _ := fileinfo.Sys().(*syscall.Stat_t)
 	return stat.Ino
 }
@@ -210,7 +280,7 @@ func kafkaProdEvtMon(producer *kafka.Producer, stateFile string) {
 				var inode uint64
 				if err == nil {
 					offset = km.KPayload.FileOffset
-					ftpFileName = km.KPayload.Filename
+					ftpFileName = km.KPayload.FileName
 					inode = km.KPayload.FileInode
 
 					savePos(offset, inode, ftpFileName, stateFile)
@@ -238,11 +308,11 @@ func kafkaSend(producer *kafka.Producer, topic string, value []byte) {
 
 	producer.ProduceChannel() <- &kmsg
 
-	npending := producer.Flush(kafkaFlushTimeout) //5sec timeout
+	npending := producer.Flush(C.KafkaFlushTimeout) //5sec timeout
 	if npending > 1 {
 		log.Printf("kafkaSend:ERROR: %d unflushed messages\n", npending)
 	}
-	if npending > kafkaMaxPending {
+	if npending > C.KafkaMaxPending {
 		log.Printf("kafkaSend:ERROR: %d unflushed messages, exiting\n", npending)
 		os.Exit(1)
 	}
@@ -258,39 +328,70 @@ func logSetup() {
 }
 
 func init() {
-	var x string
-	x = os.Getenv("KAFKA_FLUSH_TIMEOUT")
-	if len(x) > 0 {
-		kafkaFlushTimeout, _ = strconv.Atoi(x)
-	}
-	x = os.Getenv("KAFKA_MAX_PENDING")
-	if len(x) > 0 {
-		kafkaMaxPending, _ = strconv.Atoi(x)
-	}
-	log.Printf("Initialized with kafkaFlushTimeout:%d, kafkaMaxPending:%d\n", kafkaFlushTimeout, kafkaMaxPending)
-}
 
+	/*
+		var x string
+		x = os.Getenv("KAFKA_FLUSH_TIMEOUT")
+			if len(x) > 0 {
+				C.KafkaFlushTimeout, _ = strconv.Atoi(x)
+			}
+			x = os.Getenv("KAFKA_MAX_PENDING")
+			if len(x) > 0 {
+				C.KafkaMaxPending, _ = strconv.Atoi(x)
+			}
+	*/
+	//flag.StringVar(&C.ConfFile, "c", "", "`confFile`, configuration file")
+}
+func usage() {
+	fmt.Fprintf(os.Stderr, "Usage: %s -c <configuration file>\n", path.Base(os.Args[0]))
+	flag.PrintDefaults()
+}
 func main() {
 	var offset int64
-	var broker = flag.String("b", "", "kafka `bootstrap servers`, e.g.: localhost:9092")
-	var topic = flag.String("t", "", "`topic` name")
-	var ftpLogFile = flag.String("f", "", "ftp `logfile`")
-	var stateFile = flag.String("s", "", "`statefile`, a file where to save our state")
+	var err error
 
+	var confFile = flag.String("c", "log2kafka.toml", "`configuration file")
 	flag.Parse()
 
-	if len(os.Args) != 9 {
-		fmt.Fprintf(os.Stderr, "Usage: %s -s <statefile> -f <logfile> -b <broker> -t <topic>\n",
-			os.Args[0])
-		flag.PrintDefaults()
+	if len(*confFile) < 1 {
+		usage()
 		os.Exit(1)
 	}
 
 	logSetup() //syslog
 
+	/*
+		m := multiconfig.NewWithPath("log2kafka.toml") // supports TOML, JSON and YAML
+		err = m.Load(&C)
+		if err != nil {
+			fmt.Printf("ERROR: %v\n", err)
+		}
+	*/
+
+	//Defaults
+	C.FtpLogFile = "/var/log/proftpd/flare-ftp.log"
+	C.KafkaFlushTimeout = 15000
+	C.KafkaMaxPending = 10
+	C.Topic = "mytopic"
+
+	if _, err := toml.DecodeFile(*confFile, &C); err != nil {
+		fmt.Printf("ERROR:%v\n", err)
+	}
+
+	//fmt.Printf("Initialized with C:%+v\n", &C)
+	fmt.Printf("Initialized with C:%+v\n", &C)
+
+	nerr := 0
+	nerr += checkNil(C.Brokers, "Brokers")
+	nerr += checkNil(C.Topic, "Topic")
+	nerr += checkNil(C.StateFile, "StateFile")
+	if nerr > 0 {
+		os.Exit(3)
+	}
+
 	//Initialize producer
 	producer, err := kafka.NewProducer(&kafka.ConfigMap{
-		"bootstrap.servers": *broker,
+		"bootstrap.servers": C.Brokers,
 		"acks":              1,
 		"retries":           3,
 		//"max.block.ms":                        10000, //60000
@@ -307,7 +408,7 @@ func main() {
 	log.Printf("Created Producer %v (%s)\n", producer, verstr)
 
 	//Start the Kafka event monitor goroutine
-	go kafkaProdEvtMon(producer, *stateFile)
+	go kafkaProdEvtMon(producer, C.StateFile)
 
 	td := make(chan *tail.Tail) //used to communicate the *tail descriptor
 	sigs := make(chan os.Signal, 5)
@@ -316,7 +417,7 @@ func main() {
 	go sigHdl(sigs)
 
 	//Find appropriate file location from previously saved logfile position
-	seekInfo := determineLogOffset(*stateFile, *ftpLogFile)
+	seekInfo := determineLogOffset(C.StateFile, C.FtpLogFile)
 
 	cfg := tail.Config{
 		Follow:   true,
@@ -324,7 +425,7 @@ func main() {
 		Location: seekInfo,
 	}
 	// Start the logfile monitor goroutine
-	go tailFile(*ftpLogFile, cfg, td, producer, *topic)
+	go tailFile(C.FtpLogFile, cfg, td, producer, C.Topic)
 	t1 := <-td //wait for it to start and get the *tail so we can access file offset (t1.Tell()) from elsewhere
 
 	_ = err
