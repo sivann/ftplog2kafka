@@ -438,7 +438,7 @@ func main() {
 	for {
 		offset, err = t1.Tell()
 		log.Printf("log offset: %v, EventsLen:%d, ProducerLen:%d\n", offset, len(producer.Events()), len(producer.ProduceChannel()))
-		time.Sleep(5 * time.Second)
+		time.Sleep(30 * time.Second)
 	}
 
 }
