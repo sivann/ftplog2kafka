@@ -154,7 +154,7 @@ func determineLogOffset(stateFile string, ftpLogFile string) *tail.SeekInfo {
 // reads linecount lines from file fn up to hardcoded size limit of 15K
 func getLines(fn string, linecount int) string {
 	var sample string
-	var maxLength = 15000
+	var maxLength = 1500
 
 	file, err := os.Open(fn)
 	defer file.Close()
