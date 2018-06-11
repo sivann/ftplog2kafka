@@ -1,9 +1,13 @@
 /*
  * Monitors a proftpd ExtendedLog file and publishes new files to a kafka topic
  * Proftpd: LogFormat flare   "%{%Y-%m-%dT%H:%M:%S}t|%a|%u|%F|%f|%b|%{file-size}|%r|%s"
+ *
+ * Workflow:
+ * tailFile goroutine, monitors ftp log file; on successfull log file addition calls kafkaSend to submit data (and related logfile offset) to kafka
+ * kafkaProdEvtMon goroutine monitors kafka events; on successfull data submission to kafka saves logfile offset of submitted event
  */
 
-/* ftplog2kafka.toml example:
+/* Configuration  file ftplog2kafka.toml example:
    Brokers="pkgtest.inaccess.com:9092"
    StateFile="/tmp/ftplog2kafka.dat"
    Topic="mytopic"
@@ -334,25 +338,11 @@ func logSetup() {
 
 }
 
-func init() {
-
-	/*
-		var x string
-		x = os.Getenv("KAFKA_FLUSH_TIMEOUT")
-			if len(x) > 0 {
-				C.KafkaFlushTimeout, _ = strconv.Atoi(x)
-			}
-			x = os.Getenv("KAFKA_MAX_PENDING")
-			if len(x) > 0 {
-				C.KafkaMaxPending, _ = strconv.Atoi(x)
-			}
-	*/
-	//flag.StringVar(&C.ConfFile, "c", "", "`confFile`, configuration file")
-}
 func usage() {
 	fmt.Fprintf(os.Stderr, "Usage: %s -c <configuration file>\n", path.Base(os.Args[0]))
 	flag.PrintDefaults()
 }
+
 func main() {
 	var offset int64
 	var err error
@@ -367,16 +357,9 @@ func main() {
 
 	logSetup() //syslog
 
-	/*
-		m := multiconfig.NewWithPath("ftplog2kafka.toml") // supports TOML, JSON and YAML
-		err = m.Load(&C)
-		if err != nil {
-			fmt.Printf("ERROR: %v\n", err)
-		}
-	*/
-
 	//Defaults
 	C.FtpLogFile = "/var/log/proftpd/flare-ftp.log"
+	C.StateFile = "/opt/inaccess/var/lib/ftplog2kafka/ftplog2kafka.dat"
 	C.KafkaFlushTimeout = 15000
 	C.KafkaMaxPending = 10
 	C.Topic = "mytopic"
@@ -401,7 +384,6 @@ func main() {
 		"bootstrap.servers": C.Brokers,
 		"acks":              1,
 		"retries":           3,
-		//"max.block.ms":                        10000, //60000
 		"request.timeout.ms":                    15000, //30000
 		"max.in.flight.requests.per.connection": 1,
 		"produce.offset.report":                 true,
@@ -443,3 +425,4 @@ func main() {
 	}
 
 }
+
