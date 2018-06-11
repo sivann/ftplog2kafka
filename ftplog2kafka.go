@@ -3,9 +3,9 @@
  * Proftpd: LogFormat flare   "%{%Y-%m-%dT%H:%M:%S}t|%a|%u|%F|%f|%b|%{file-size}|%r|%s"
  */
 
-/* log2kafka.toml example:
+/* ftplog2kafka.toml example:
    Brokers="pkgtest.inaccess.com:9092"
-   StateFile="/tmp/log2kafka.dat"
+   StateFile="/tmp/ftplog2kafka.dat"
    Topic="mytopic"
    FtpHomePrefix='/disk1/ftphome'
 */
@@ -35,6 +35,7 @@ import (
 	"github.com/hpcloud/tail"
 )
 
+//Config holds the values read from configuration file
 type Config struct {
 	KafkaFlushTimeout int //message produce timeout (ms), override with env KAFKA_FLUSH_TIMEOUT
 	KafkaMaxPending   int //with that many undelivered messages, exit. Override with env KAFKA_MAX_PENDING
@@ -326,7 +327,7 @@ func kafkaSend(producer *kafka.Producer, topic string, value []byte) {
 
 // syslog init
 func logSetup() {
-	logwriter, err := syslog.New(syslog.LOG_NOTICE, "log2kafka")
+	logwriter, err := syslog.New(syslog.LOG_NOTICE, "ftplog2kafka")
 	if err == nil {
 		log.SetOutput(logwriter)
 	}
@@ -356,7 +357,7 @@ func main() {
 	var offset int64
 	var err error
 
-	var confFile = flag.String("c", "log2kafka.toml", "`configuration file")
+	var confFile = flag.String("c", "ftplog2kafka.toml", "`configuration file")
 	flag.Parse()
 
 	if len(*confFile) < 1 {
@@ -367,7 +368,7 @@ func main() {
 	logSetup() //syslog
 
 	/*
-		m := multiconfig.NewWithPath("log2kafka.toml") // supports TOML, JSON and YAML
+		m := multiconfig.NewWithPath("ftplog2kafka.toml") // supports TOML, JSON and YAML
 		err = m.Load(&C)
 		if err != nil {
 			fmt.Printf("ERROR: %v\n", err)
