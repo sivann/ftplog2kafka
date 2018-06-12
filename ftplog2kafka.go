@@ -217,9 +217,10 @@ func xferlog2KMessage(line string, offset int64, inode uint64) ([]byte, error) {
 	fullpath := C.FtpHomePrefix + "/" + s[4]
 	sample := getLines(fullpath, 10)
 	//fmt.Printf("sample[%s]:%s\n",s[4],sample);
+	sz:=fmt.Sprintf("%d",getFileSize(fullpath))
 
 	m := &KMessage{
-		Type: "NewFile",
+		Type: "FileWrite",
 		KPayload: KPayload{
 			Timestamp:       s[0],
 			RemoteIP:        s[1],
@@ -227,7 +228,7 @@ func xferlog2KMessage(line string, offset int64, inode uint64) ([]byte, error) {
 			FileName:        s[3],
 			FileNameFull:    s[4],
 			BytesTransfered: s[5],
-			FileSize:        string(getFileSize(fullpath)), //s[6],
+			FileSize:        sz, //s[6],
 			FTPCommand:      s[7],
 			FTPResponse:     s[8],
 			Sample:          sample,
