@@ -71,8 +71,8 @@ type KPayload struct {
 	FTPCommand      string
 	FTPResponse     string
 	Sample          string
-	FileOffset      int64
-	FileInode       uint64
+	LogFileOffset   int64
+	LogFileInode    uint64
 }
 
 func check(e error) {
@@ -148,12 +148,22 @@ func determineLogOffset(stateFile string, ftpLogFile string) *tail.SeekInfo {
 		log.Printf("ftp logfile inodes match (%d) and statefile is valid: seeking to offset:%d\n", currentInode, offset)
 		seekInfo = &tail.SeekInfo{Offset: offset, Whence: io.SeekStart}
 	} else if !stateFileOk {
-		log.Printf("WARNING: statefile seems corrupted, seeking to start of logfile %s",ftpLogFile)
+		log.Printf("WARNING: statefile seems corrupted, seeking to start of logfile %s", ftpLogFile)
 		seekInfo = &tail.SeekInfo{Offset: 0, Whence: io.SeekStart}
 	} else {
 		log.Printf("WARNING: logfile seems changed since we last tailed it (previous inode: %d, current inode:%d), seeking to start of logfile.", savedInode, currentInode)
 	}
 	return seekInfo
+}
+
+// returns file size of file
+func getFileSize(fileName string) int64 {
+	fileinfo, err := os.Stat(fileName)
+	if err != nil {
+		log.Printf("ERROR:getSize: os.Stat %s: %v\n", fileName, err)
+		return 0
+	}
+	return fileinfo.Size()
 }
 
 // reads linecount lines from file fn up to hardcoded size limit of 15K
@@ -196,14 +206,15 @@ func getLines(fn string, linecount int) string {
 func xferlog2KMessage(line string, offset int64, inode uint64) ([]byte, error) {
 	//Example line from ftp:
 	//2018-06-06T13:24:56|195.46.28.226|ftp-admin|/bbb/LibreOffice_6.0.4_MacOS_x86-64.dmg|91488256||STOR LibreOffice_6.0.4_MacOS_x86-64.dmg|226
-	log.Printf("Parsing: %s\n",line);
+	log.Printf("Parsing: %s\n", line)
 
 	s := strings.Split(line, "|")
 	if len(s) < 9 {
-		return nil, errors.New("Not enough fields in logfile")
+		msg := fmt.Sprintf("ERROR: Not enough fields in logfile, found:%d, expected:9, line:[%s]",len(s),line)
+		return nil, errors.New(msg)
 	}
 
-	fullpath := C.FtpHomePrefix+"/"+s[4]
+	fullpath := C.FtpHomePrefix + "/" + s[4]
 	sample := getLines(fullpath, 10)
 	//fmt.Printf("sample[%s]:%s\n",s[4],sample);
 
@@ -216,12 +227,12 @@ func xferlog2KMessage(line string, offset int64, inode uint64) ([]byte, error) {
 			FileName:        s[3],
 			FileNameFull:    s[4],
 			BytesTransfered: s[5],
-			FileSize:        s[6],
+			FileSize:        string(getFileSize(fullpath)), //s[6],
 			FTPCommand:      s[7],
 			FTPResponse:     s[8],
 			Sample:          sample,
-			FileOffset:      offset,
-			FileInode:       inode,
+			LogFileOffset:   offset,
+			LogFileInode:    inode,
 		},
 	}
 	jdata, _ := json.Marshal(m)
@@ -246,7 +257,7 @@ func tailFile(logFile string, cfg tail.Config,
 	td <- t
 
 	if err != nil {
-		fmt.Printf("ERROR:%v\n",err);
+		fmt.Printf("ERROR:%v\n", err)
 		log.Fatalln("TailFile failed - ", err)
 		return
 	}
@@ -290,9 +301,9 @@ func kafkaProdEvtMon(producer *kafka.Producer, stateFile string) {
 				var offset int64
 				var inode uint64
 				if err == nil {
-					offset = km.KPayload.FileOffset
+					offset = km.KPayload.LogFileOffset
 					ftpFileName = km.KPayload.FileName
-					inode = km.KPayload.FileInode
+					inode = km.KPayload.LogFileInode
 
 					savePos(offset, inode, ftpFileName, stateFile)
 				}
@@ -381,9 +392,9 @@ func main() {
 
 	//Initialize producer
 	producer, err := kafka.NewProducer(&kafka.ConfigMap{
-		"bootstrap.servers": C.Brokers,
-		"acks":              1,
-		"retries":           3,
+		"bootstrap.servers":                     C.Brokers,
+		"acks":                                  1,
+		"retries":                               3,
 		"request.timeout.ms":                    15000, //30000
 		"max.in.flight.requests.per.connection": 1,
 		"produce.offset.report":                 true,
@@ -409,10 +420,10 @@ func main() {
 	seekInfo := determineLogOffset(C.StateFile, C.FtpLogFile)
 
 	cfg := tail.Config{
-		Follow:   true,
-		ReOpen:   true,
-		MustExist:   true,
-		Location: seekInfo,
+		Follow:    true,
+		ReOpen:    true,
+		MustExist: true,
+		Location:  seekInfo,
 	}
 	// Start the logfile monitor goroutine
 	go tailFile(C.FtpLogFile, cfg, td, producer, C.Topic)
@@ -425,4 +436,3 @@ func main() {
 	}
 
 }
-
