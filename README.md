@@ -7,7 +7,7 @@
 ```govend -v```
 
 2. Build
-go build 
+```go build```
 
 ## Configuration ##
 Configuration file specified at command line in toml format (-c config.toml)
