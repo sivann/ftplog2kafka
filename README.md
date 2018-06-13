@@ -1,5 +1,5 @@
 ## About ##
-  Monitors a proftpd ExtendedLog file and publishes new files to a kafka topic
+  Monitors a proftpd ExtendedLog file and publishes file write events to a kafka topic
 
 ## Compile ##
 
