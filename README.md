@@ -42,6 +42,28 @@ LogFormat                       flare   "%{%Y-%m-%dT%H:%M:%S}t|%a|%u|%F|%f|%b|%{
 * KafkaMaxPending = 10
 * Topic = "mytopic"
 
+## Kafka message format ##
+
+After uploading export.csv in bbb/ ftp directory, the following gets submitted to kafka:
+
+```
+{
+  "Type": "FileWrite",
+  "Timestamp": "2018-06-12T12:38:00",
+  "FileName": "/bbb/export.csv",
+  "FileNameFull": "/bbb/export.csv",
+  "BytesTransfered": "2533",
+  "FileSize": "2533",
+  "RemoteIP": "195.46.28.226",
+  "Username": "ftp-admin",
+  "FTPCommand": "STOR export.csv",
+  "FTPResponse": "226",
+  "Sample": ";Rosh Pinah-Reference yield (daily)\r\n2018-05-16 00:15:00;6.00\r\n2018-05-16 00:30:00;6.00\r\n2018-05-16 00:45:00;6.00\r\n2018-05-16 01:00:00;6.00\r\n2018-05-16 01:15:00;0.00\r\n2018-05-16 01:30:00;0.00\r\n2018-05-16 01:45:00;0.00\r\n2018-05-16 02:00:00;0.00\r\n2018-05-16 02:15:00;0.00\r\n",
+  "LogFileOffset": 1068,
+  "LogFileInode": 707122
+}
+```
+
 ### Workflow ###
  * tailFile goroutine, monitors ftp log file; on successfull log file addition calls kafkaSend to submit data (and related logfile offset) to kafka
  * kafkaProdEvtMon goroutine monitors kafka events; on successfull data submission to kafka saves logfile offset of submitted event
