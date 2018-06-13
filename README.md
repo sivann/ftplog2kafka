@@ -48,7 +48,7 @@ The Sample field includes 10 lines and is  hard-limited to 1500KB.
 After uploading export.csv in bbb/ ftp directory, the following gets submitted to kafka:
 
 
-```
+```json
 {
   "Type": "FileWrite",
   "Timestamp": "2018-06-12T12:38:00",
