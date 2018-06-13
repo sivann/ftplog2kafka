@@ -64,6 +64,8 @@ After uploading export.csv in bbb/ ftp directory, the following gets submitted t
 }
 ```
 
+"Sample" includes 10 lines and is  hard-limited to 1500KB.
+
 ### Workflow ###
  * tailFile goroutine, monitors ftp log file; on successfull log file addition calls kafkaSend to submit data (and related logfile offset) to kafka
  * kafkaProdEvtMon goroutine monitors kafka events; on successfull data submission to kafka saves logfile offset of submitted event
