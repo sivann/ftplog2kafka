@@ -47,6 +47,7 @@ LogFormat                       flare   "%{%Y-%m-%dT%H:%M:%S}t|%a|%u|%F|%f|%b|%{
 The Sample field includes 10 lines and is  hard-limited to 1500KB.
 After uploading export.csv in bbb/ ftp directory, the following gets submitted to kafka:
 
+
 ```
 {
   "Type": "FileWrite",
