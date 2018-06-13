@@ -26,8 +26,8 @@ LogFormat                       flare   "%{%Y-%m-%dT%H:%M:%S}t|%a|%u|%F|%f|%b|%{
 
 ### Values ###
 
-* KafkaFlushTimeout: message produce timeout (ms), override with env KAFKA_FLUSH_TIMEOUT
-* KafkaMaxPending:   with that many undelivered messages, exit. Override with env KAFKA_MAX_PENDING
+* KafkaFlushTimeout: message produce timeout (ms)
+* KafkaMaxPending:  after that many undelivered messages (in local queue), exit
 * FtpHomePrefix: Prepend this prefix to uploaded filenames, so we can read line samples
 * FtpLogFile: FTP Log file to monitor
 * Topic:  Kafka topic to submit
