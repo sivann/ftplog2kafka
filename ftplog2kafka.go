@@ -248,7 +248,7 @@ func xferlog2KMessage(line string, offset int64, inode uint64) ([]byte, error) {
 	}
 
 	var bn string
-	gecofields, err := getUserGecosByUsername("ftpd.passwd", "Plant2")
+	gecofields, err := getUserGecosByUsername(C.FtpPasswd, s[2])
 	if err == nil {
 		bn = path.Base(gecofields[5]) //last part of home directory, uuid of user
 		fmt.Printf("Found  user %s above, bn:%s\n", gecofields[0], bn)
