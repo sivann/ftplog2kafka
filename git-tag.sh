@@ -50,15 +50,10 @@ echo "${newtag}:${lastdate}" > ${GVF}
 git add $GVF
 git commit -a -m "updating $GVF to ${newtag}"
 
-echo ""
-read -p "Press [Enter] key to push :"
 git push 
 
-echo ""
-read -p "Press [Enter] key to tag ${newtag}: "
 git tag -a $newtag -m "Version ${newtag}"
 
 echo ""
-read -p "Press [Enter] key to push tags: "
 git push --tags
 
