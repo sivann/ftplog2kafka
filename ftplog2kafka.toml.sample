@@ -2,3 +2,4 @@ Brokers="pkgtest.inaccess.com:9092"
 StateFile="/opt/inaccess/var/lib/ftplog2kafka/ftplog2kafka.dat"
 Topic="mytopic"
 FtpHomePrefix='/disk1/ftphome'
+FtpPasswd="/etc/proftpd/ftpd.passwd"

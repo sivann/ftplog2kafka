@@ -12,6 +12,7 @@
    StateFile="/tmp/ftplog2kafka.dat"
    Topic="mytopic"
    FtpHomePrefix='/disk1/ftphome'
+   FtpPasswd="/etc/proftpd/ftpd.passwd"
 */
 
 package main
@@ -44,6 +45,7 @@ type Config struct {
 	KafkaFlushTimeout int //message produce timeout (ms), override with env KAFKA_FLUSH_TIMEOUT
 	KafkaMaxPending   int //with that many undelivered messages, exit. Override with env KAFKA_MAX_PENDING
 	FtpHomePrefix     string
+	FtpPasswd         string
 	FtpLogFile        string
 	Topic             string
 	Brokers           string
@@ -63,11 +65,11 @@ type KMessage struct {
 type KPayload struct {
 	Timestamp       string
 	FileName        string
-	FileNameFull    string
 	BytesTransfered string
 	FileSize        string
 	RemoteIP        string
 	Username        string
+	HomeBasedir     string
 	FTPCommand      string
 	FTPResponse     string
 	Sample          string
@@ -156,6 +158,37 @@ func determineLogOffset(stateFile string, ftpLogFile string) *tail.SeekInfo {
 	return seekInfo
 }
 
+//Parse ftp passwd user file
+func getUserGecosByUsername(pwfile string, username string) (gecos []string, err error) {
+
+	file, err := os.Open(pwfile)
+
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if err := scanner.Err(); err != nil {
+			fmt.Fprintln(os.Stderr, "reading standard input:", err)
+		}
+
+		fields := strings.Split(line, ":")
+		if fields[0] == username {
+			return fields, nil
+		}
+
+	}
+
+	return nil, errors.New("user not found")
+
+}
+
 // returns file size of file
 func getFileSize(fileName string) int64 {
 	fileinfo, err := os.Stat(fileName)
@@ -210,14 +243,23 @@ func xferlog2KMessage(line string, offset int64, inode uint64) ([]byte, error) {
 
 	s := strings.Split(line, "|")
 	if len(s) < 9 {
-		msg := fmt.Sprintf("ERROR: Not enough fields in logfile, found:%d, expected:9, line:[%s]",len(s),line)
+		msg := fmt.Sprintf("ERROR: Not enough fields in logfile, found:%d, expected:9, line:[%s]", len(s), line)
 		return nil, errors.New(msg)
 	}
 
-	fullpath := C.FtpHomePrefix + "/" + s[4]
+	var bn string
+	gecofields, err := getUserGecosByUsername("ftpd.passwd", "Plant2")
+	if err == nil {
+		bn = path.Base(gecofields[5]) //last part of home directory, uuid of user
+		fmt.Printf("Found  user %s above, bn:%s\n", gecofields[0], bn)
+	} else {
+		fmt.Printf("ERR: %v\n", err)
+	}
+
+	fullpath := C.FtpHomePrefix + "/" + bn + s[4]
 	sample := getLines(fullpath, 10)
 	//fmt.Printf("sample[%s]:%s\n",s[4],sample);
-	sz:=fmt.Sprintf("%d",getFileSize(fullpath))
+	sz := fmt.Sprintf("%d", getFileSize(fullpath))
 
 	m := &KMessage{
 		Type: "FileWrite",
@@ -226,9 +268,9 @@ func xferlog2KMessage(line string, offset int64, inode uint64) ([]byte, error) {
 			RemoteIP:        s[1],
 			Username:        s[2],
 			FileName:        s[3],
-			FileNameFull:    s[4],
 			BytesTransfered: s[5],
 			FileSize:        sz, //s[6],
+			HomeBasedir:     bn,
 			FTPCommand:      s[7],
 			FTPResponse:     s[8],
 			Sample:          sample,
@@ -375,6 +417,7 @@ func main() {
 	C.KafkaFlushTimeout = 15000
 	C.KafkaMaxPending = 10
 	C.Topic = "mytopic"
+	C.FtpPasswd = "/etc/proftpd/ftpd.passwd"
 
 	if _, err := toml.DecodeFile(*confFile, &C); err != nil {
 		fmt.Printf("ERROR:%v\n", err)
@@ -387,6 +430,7 @@ func main() {
 	nerr += checkNil(C.Brokers, "Brokers")
 	nerr += checkNil(C.Topic, "Topic")
 	nerr += checkNil(C.StateFile, "StateFile")
+	nerr += checkNil(C.FtpPasswd, "FtpPasswd")
 	if nerr > 0 {
 		os.Exit(3)
 	}
